@@ -1,0 +1,318 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <time.h>
+
+
+int simpleHash(const char *password) {
+    int hash = 0;
+    for (int i = 0; password[i] != '\0'; i++)
+        hash += password[i] * (i + 1);
+    return hash;
+}
+
+void readLine(char *buf, int bufsize) {
+    if (fgets(buf, bufsize, stdin) == NULL) {
+        buf[0] = '\0';
+        return;
+    }
+    size_t len = strcspn(buf, "\n");
+    if (len < strlen(buf)) {
+        buf[len] = '\0';
+    } else {
+        int c;
+        while ((c = getchar()) != '\n' && c != EOF);
+    }
+}
+
+
+void getCurrentDate(char *buffer, int buflen) {
+    time_t t = time(NULL);
+    struct tm *tm_info = localtime(&t);
+    strftime(buffer, buflen, "%d-%m-%Y", tm_info);
+}
+
+
+void writeEntry() {
+    char entry[500];
+    char datebuf[20];
+
+    printf("\nEnter your diary entry (max 500 chars):\n");
+    readLine(entry, sizeof(entry));
+    if (entry[0] == '\0') {
+        printf("No text entered. Entry cancelled.\n");
+        return;
+    }
+
+    getCurrentDate(datebuf, sizeof(datebuf));
+    FILE *fp = fopen("diary.txt", "a");
+    if (!fp) {
+        printf("Error opening diary file!\n");
+        return;
+    }
+    fprintf(fp, "Date: %s\n%s\n---\n", datebuf, entry);
+    fclose(fp);
+
+    printf("Entry saved successfully!\n");
+}
+
+
+void readEntries() {
+    FILE *fp = fopen("diary.txt", "r");
+    if (!fp) {
+        printf("\nNo diary entries found!\n");
+        return;
+    }
+
+    printf("\n---- YOUR DIARY ENTRIES ----\n\n");
+
+    char line[600];
+    while (fgets(line, sizeof(line), fp)) {
+        fputs(line, stdout);
+    }
+    fclose(fp);
+}
+
+
+void deleteEntry() {
+    FILE *fp = fopen("diary.txt", "r");
+    if (!fp) {
+        printf("\nNo diary entries found!\n");
+        return;
+    }
+
+    #define MAX_LINES 2000
+    #define MAX_LINE_LEN 700
+
+    char (*lines)[MAX_LINE_LEN] = malloc(MAX_LINES * MAX_LINE_LEN);
+    if (!lines) {
+        fclose(fp);
+        printf("Memory error.\n");
+        return;
+    }
+
+    int totalLines = 0;
+    while (totalLines < MAX_LINES && fgets(lines[totalLines], MAX_LINE_LEN, fp)) {
+        totalLines++;
+    }
+    fclose(fp);
+
+    int entryCount = 0;
+    for (int i = 0; i < totalLines; i++) {
+        if (strncmp(lines[i], "Date:", 5) == 0) {
+            entryCount++;
+            printf("%d. %s", entryCount, lines[i] + 6);
+        }
+    }
+
+    if (entryCount == 0) {
+        printf("No entries to delete!\n");
+        free(lines);
+        return;
+    }
+
+    char input[32];
+    int del;
+
+    while (1) {
+        printf("\nEnter entry number to delete (or 0 to cancel): ");
+        readLine(input, sizeof(input));
+
+        int valid = 1;
+        for (int i = 0; input[i] != '\0'; i++)
+            if (!isdigit(input[i])) valid = 0;
+
+        if (!valid || input[0] == '\0') {
+            printf("Invalid input. Enter a number only.\n");
+            continue;
+        }
+
+        del = atoi(input);
+
+        if (del == 0) {
+            printf("Delete cancelled.\n");
+            free(lines);
+            return;
+        }
+        if (del < 1 || del > entryCount) {
+            printf("Invalid entry number. Try again.\n");
+            continue;
+        }
+        break;
+    }
+
+    fp = fopen("diary.txt", "w");
+    if (!fp) {
+        printf("Error writing diary file!\n");
+        free(lines);
+        return;
+    }
+
+    int currentEntry = 0;
+
+    for (int i = 0; i < totalLines; i++) {
+        if (strncmp(lines[i], "Date:", 5) == 0)
+            currentEntry++;
+
+        if (currentEntry == del) {
+            while (i < totalLines && strncmp(lines[i], "---", 3) != 0)
+                i++;
+
+            continue;
+        }
+
+        fprintf(fp, "%s", lines[i]);
+    }
+
+    fclose(fp);
+    free(lines);
+
+    printf("\nEntry deleted successfully!\n");
+}
+
+
+void changePassword() {
+    char oldPass[256], newPass[256];
+    int savedHash;
+
+    FILE *pf = fopen("password.dat", "r");
+    if (!pf) {
+        printf("Password file missing!\n");
+        return;
+    }
+
+    fscanf(pf, "%d", &savedHash);
+    fclose(pf);
+
+    printf("Enter current password: ");
+    readLine(oldPass, sizeof(oldPass));
+
+    if (simpleHash(oldPass) != savedHash) {
+        printf("Incorrect current password!\n");
+        return;
+    }
+
+    while (1) {
+        printf("Enter new password (no spaces): ");
+        readLine(newPass, sizeof(newPass));
+
+        if (newPass[0] == '\0') {
+            printf("Password cannot be empty!\n");
+            continue;
+        }
+
+        int hasSpace = 0;
+        for (int i = 0; newPass[i] != '\0'; i++)
+            if (isspace(newPass[i])) hasSpace = 1;
+
+        if (hasSpace) {
+            printf("Password must not contain spaces!\n");
+            continue;
+        }
+
+        break;
+    }
+
+    pf = fopen("password.dat", "w");
+    if (!pf) {
+        printf("Error saving password!\n");
+        return;
+    }
+
+    fprintf(pf, "%d", simpleHash(newPass));
+    fclose(pf);
+
+    printf("Password changed successfully!\n");
+}
+
+int main() {
+
+    char password[256];
+    int savedHash;
+
+    printf("      PERSONAL DIARY MANAGEMENT\n");
+
+    FILE *pf = fopen("password.dat", "r");
+
+    if (!pf) {
+        while (1) {
+            printf("No password set. Create a new password: ");
+            readLine(password, sizeof(password));
+
+            if (password[0] == '\0') {
+                printf("Password cannot be empty!\n");
+                continue;
+            }
+
+            int hasSpace = 0;
+            for (int i = 0; password[i] != '\0'; i++)
+                if (isspace(password[i])) hasSpace = 1;
+
+            if (hasSpace) {
+                printf("Password must not contain spaces!\n");
+                continue;
+            }
+
+            break;
+        }
+
+        savedHash = simpleHash(password);
+        pf = fopen("password.dat", "w");
+        fprintf(pf, "%d", savedHash);
+        fclose(pf);
+
+        printf("Password created successfully!\n");
+
+    } else {
+        fscanf(pf, "%d", &savedHash);
+        fclose(pf);
+    }
+
+    while (1) {
+        printf("\nEnter password: ");
+        readLine(password, sizeof(password));
+
+        if (simpleHash(password) == savedHash) {
+            printf("\nLogin Successful!\n");
+            break;
+        } else {
+            printf("Incorrect Password! Try again.\n");
+        }
+    }
+
+
+    while (1) {
+        printf("\n1. Write New Entry\n");
+        printf("2. View All Entries\n");
+        printf("3. Delete an Entry\n");
+        printf("4. Change Password\n");
+        printf("5. Exit\n");
+        printf("Enter choice: ");
+
+        char input[32];
+        readLine(input, sizeof(input));
+
+        int valid = 1;
+        for (int i = 0; input[i] != '\0'; i++)
+            if (!isdigit(input[i])) valid = 0;
+
+        if (!valid || input[0] == '\0') {
+            printf("Invalid input! Enter a number only.\n");
+            continue;
+        }
+
+        int choice = atoi(input);
+
+        switch (choice) {
+            case 1: writeEntry(); break;
+            case 2: readEntries(); break;
+            case 3: deleteEntry(); break;
+            case 4: changePassword(); break;
+            case 5: printf("Exiting... Goodbye!\n"); return 0;
+            default: printf("Invalid choice!\n");
+        }
+    }
+
+    return 0;
+}
